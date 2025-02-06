@@ -1,0 +1,375 @@
+---
+title: "JCEM - jc.2024-03763 - Lipid metabolism in Tangier disease"
+author: "Oleksandr Petrenko, Georg Semmler"
+date: "04.02.2025"
+output: 
+  html_document: 
+    df_print: paged
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    code_folding: show
+  word_document: default
+  pdf_document: default
+---
+
+```{r}
+knitr::opts_chunk$set(fig.width=12, fig.height=8)
+```
+
+# Method 1 - all
+## Setup
+```{r, include=FALSE}
+# Load required packages
+if (!requireNamespace("pacman", quietly = TRUE)) install.packages("pacman")
+pacman::p_load(
+  tidyverse, dplyr, readxl, ggplot2, patchwork, factoextra, gridExtra, here, 
+  PCAtools, limma, EnhancedVolcano, compositions, writexl
+)
+
+# Load data
+data <- read_excel("NMR_results_method_1.xlsx")
+
+# Load Metadata
+data_meta <- data.frame(Group = c("Control", "Control", "Control", "Control", 
+               "Control", "Control", "Control", "Control", 
+               "Control", "Control", "Disease", "Disease", 
+               "Disease", "Disease"))
+
+# Format and transform the data
+data <- as.data.frame(t(data))
+data <- data %>% mutate(across(where(is.character), as.numeric))
+
+# Replace zeros to avoid log issues
+data[data == 0] <- min(data[data > 0], na.rm = TRUE) * 0.5
+
+# Log transformation and standardization
+data <- log(data) +1
+data <- as.data.frame(scale(data))
+```
+
+## Differential Abundance Analysis with LiMMA
+```{r}
+data_meta$Group <- as.factor(data_meta$Group)
+design_matrix <- model.matrix(~ 0 + Group, data = data_meta)
+colnames(design_matrix) <- levels(data_meta$Group)
+
+fit <- lmFit(data, design_matrix)
+contrast_matrix <- makeContrasts(Group1vsGroup2 = Disease - Control, levels = design_matrix)
+fit2 <- contrasts.fit(fit, contrast_matrix)
+fit2 <- eBayes(fit2)
+
+topTable_results <- topTable(fit2, adjust.method = "fdr", number = Inf)
+DAA_method_1_all <- topTable_results %>%
+    filter(abs(logFC) > 0.5, adj.P.Val < 0.05) %>%
+    arrange(desc(logFC))
+
+# Display filtered results & export to Excel
+print(DAA_method_1_all)
+write_xlsx(cbind(Metabolites = rownames(DAA_method_1_all), DAA_method_1_all), "DAA_method_1_all.xlsx")
+```
+
+### Figure 3A - Volcano plot
+```{r}
+# Generate Volcano Plot
+volcano_plot <- EnhancedVolcano(
+    DAA_method_1_all,
+    lab = rownames(DAA_method_1_all),
+    x = 'logFC',
+    y = 'P.Value',
+    xlim = c(-5, 5),
+    title = 'Volcano Plot',
+    legendPosition = 'top'
+)
+volcano_plot
+```
+
+## Prinicpal Component Analysis
+```{r}
+data_meta$Group <- factor(ifelse(data_meta$Group == 'Control', 'Healthy control', 'Tangier disease'), 
+                          levels = c('Healthy control', 'Tangier disease'))
+
+rownames(data_meta) <- colnames(data)
+
+p <- pca(data, metadata = data_meta, removeVar = 0.1)
+
+PCA_method_1_all <- as.data.frame(p$loadings)
+
+# Display filtered results & export to Excel
+print(PCA_method_1_all)
+write_xlsx(cbind(Metabolites = rownames(PCA_method_1_all), PCA_method_1_all), "PCA_method_1_all.xlsx")
+```
+
+### Figure 3B - Biplot
+```{r}
+# Create the biplot
+biplot_plot <-  
+  biplot(p, 
+       showLoadings = TRUE,
+       lab = NULL, 
+       pointSize = 3, 
+       sizeLoadingsNames = 5,
+       ellipse = FALSE,
+       colkey = c('Tangier disease'= '#fdd635', 'Healthy control' = '#a7abed'),
+       colby = 'Group', 
+       legendPosition = 'top', 
+       legendLabSize = 16, 
+       legendIconSize = 8.0
+       )
+biplot_plot
+```
+
+## Safe to PDF
+```{r}
+pdf("Figure 3.pdf", width = 8, height = 14)  
+
+grid.arrange(volcano_plot + ggtitle("A"), 
+             biplot_plot + ggtitle("B"), 
+             ncol = 1)
+dev.off()
+```
+
+# Method 1 - exclude patient #4
+```{r}
+# Load data
+data <- read_excel("NMR_results_method_1.xlsx")
+data <- data[-11, ]
+
+# Load Metadata
+data_meta <- data.frame(Group = c("Control", "Control", "Control", "Control", 
+               "Control", "Control", "Control", "Control", 
+               "Control", "Control", "Disease", "Disease", "Disease"
+               ))
+
+# Format and transform the data
+data <- as.data.frame(t(data))
+data <- data %>% mutate(across(where(is.character), as.numeric))
+
+# Replace zeros to avoid log issues
+data[data == 0] <- min(data[data > 0], na.rm = TRUE) * 0.5
+
+# Log transformation and standardization
+data <- log(data) +1
+data <- as.data.frame(scale(data))
+```
+
+## Differential Abundance Analysis with LiMMA
+```{r}
+data_meta$Group <- as.factor(data_meta$Group)
+design_matrix <- model.matrix(~ 0 + Group, data = data_meta)
+colnames(design_matrix) <- levels(data_meta$Group)
+
+fit <- lmFit(data, design_matrix)
+contrast_matrix <- makeContrasts(Group1vsGroup2 = Disease - Control, levels = design_matrix)
+fit2 <- contrasts.fit(fit, contrast_matrix)
+fit2 <- eBayes(fit2)
+
+topTable_results <- topTable(fit2, adjust.method = "fdr", number = Inf)
+DAA_method_1_subgroup <- topTable_results %>%
+    filter(abs(logFC) > 0.5, adj.P.Val < 0.05) %>%
+    arrange(desc(logFC))
+
+# Display filtered results & export to Excel
+print(DAA_method_1_subgroup)
+write_xlsx(cbind(Metabolites = rownames(DAA_method_1_subgroup), DAA_method_1_subgroup), "DAA_method_1_subgroup.xlsx")
+```
+
+### Supplementary figure 5A - Volcano plot
+```{r}
+# Generate Volcano Plot
+volcano_plot <- EnhancedVolcano(
+    DAA_method_1_subgroup,
+    lab = rownames(DAA_method_1_subgroup),
+    x = 'logFC',
+    y = 'P.Value',
+    xlim = c(-5, 5),
+    title = 'Volcano Plot',
+    legendPosition = 'top'
+)
+volcano_plot
+```
+
+## Prinicpal Component Analysis
+```{r}
+data_meta$Group <- factor(ifelse(data_meta$Group == 'Control', 'Healthy control', 'Tangier disease'), 
+                          levels = c('Healthy control', 'Tangier disease'))
+
+rownames(data_meta) <- colnames(data)
+
+p <- pca(data, metadata = data_meta, removeVar = 0.1)
+
+PCA_method_1_subgroup <- as.data.frame(p$loadings)
+
+# Display filtered results & export to Excel
+print(PCA_method_1_subgroup)
+write_xlsx(cbind(Metabolites = rownames(PCA_method_1_subgroup), PCA_method_1_subgroup), "PCA_method_1_subgroup.xlsx")
+```
+
+### Supplementary figure 5B - Biplot
+```{r}
+# Create the biplot
+biplot_plot <-  
+  biplot(p, 
+       showLoadings = TRUE,
+       lab = NULL, 
+       pointSize = 3, 
+       sizeLoadingsNames = 5,
+       ellipse = FALSE,
+       colkey = c('Tangier disease'= '#fdd635', 'Healthy control' = '#a7abed'),
+       colby = 'Group', 
+       legendPosition = 'top', 
+       legendLabSize = 16, 
+       legendIconSize = 8.0
+       )
+biplot_plot
+```
+
+## Supplementary figure 5 
+```{r}
+tiff("Supp fig 5.tiff", width = 10, height = 12, units = "in", res = 300, compression = "lzw")
+
+grid.arrange(volcano_plot + ggtitle("A"), 
+             biplot_plot + ggtitle("B"), 
+             ncol = 1)
+
+dev.off()
+```
+
+# Method 2
+```{}
+# Load data
+data <- read_excel("NMR_results_method_2.xlsx")
+
+# Delete all percent or ratios
+data <- data %>%
+  select(-contains("Prozent"), -contains("size"), -TG_to_PG, -ApoB_to_ApoA1, -Unsaturation, -PUFA_to_MUFA, -Omega_6_to_Omega_3)
+
+# Load Metadata
+data_meta <- data.frame(Group = c("Disease", "Disease", 
+               "Control", "Control", "Control", "Control", 
+               "Control", "Control", "Control", "Control", 
+               "Control", "Control", "Control", "Control", 
+               "Control"))
+
+# Format and transform the data
+data <- as.data.frame(t(data))
+data <- data %>% mutate(across(where(is.character), as.numeric))
+
+# Replace zeros to avoid log issues
+data[data == 0] <- min(data[data > 0], na.rm = TRUE) * 0.5
+
+# Log transformation and standardization
+data <- log1p(data)  # log1p(x) is log(x + 1)
+data <- as.data.frame(scale(data))
+```
+
+
+```{r}
+# Load data
+data <- read_excel("NMR_results_method_2.xlsx")
+
+# Delete all percent or ratios
+data <- data %>%
+  select(-contains("pct"), -contains("size"), -TG_to_PG, -ApoB_to_ApoA1, -Unsaturation, -PUFA_to_MUFA, -Omega_6_to_Omega_3)
+
+# Load Metadata
+data_meta <- data.frame(Group = c("Disease", "Disease", 
+               "Control", "Control", "Control", "Control", 
+               "Control", "Control", "Control", "Control", 
+               "Control", "Control", "Control", "Control", 
+               "Control"))
+
+# Format and transform the data
+data <- as.data.frame(t(data))
+data <- data %>% mutate(across(where(is.character), as.numeric))
+
+# Replace zeros to avoid log issues
+#data[data == 0] <- min(data[data > 0], na.rm = TRUE) * 0.5
+
+# Log transformation and standardization
+data <- log(data) +1
+data <- as.data.frame(scale(data))
+```
+
+## Differential Abundance Analysis with LiMMA
+```{r}
+data_meta$Group <- as.factor(data_meta$Group)
+design_matrix <- model.matrix(~ 0 + Group, data = data_meta)
+colnames(design_matrix) <- levels(data_meta$Group)
+
+fit <- lmFit(data, design_matrix)
+contrast_matrix <- makeContrasts(Group1vsGroup2 = Disease - Control, levels = design_matrix)
+fit2 <- contrasts.fit(fit, contrast_matrix)
+fit2 <- eBayes(fit2)
+
+topTable_results <- topTable(fit2, adjust.method = "fdr", number = Inf)
+DAA_method_2 <- topTable_results %>%
+    filter(abs(logFC) > 0.5, adj.P.Val < 0.05) %>%
+    arrange(desc(logFC))
+
+# Display filtered results & export to Excel
+print(DAA_method_2)
+write_xlsx(cbind(Metabolites = rownames(DAA_method_2), DAA_method_2), "DAA_method_2.xlsx")
+```
+
+### Supplementary figure 6A - Volcano plot
+```{r}
+# Generate Volcano Plot
+volcano_plot <- EnhancedVolcano(
+    DAA_method_2,
+    lab = rownames(DAA_method_2),
+    x = 'logFC',
+    y = 'P.Value',
+    xlim = c(-5, 5),
+    title = 'Volcano Plot',
+    legendPosition = 'top'
+)
+volcano_plot
+```
+
+## Prinicpal Component Analysis
+```{r}
+data_meta$Group <- factor(ifelse(data_meta$Group == 'Control', 'Healthy control', 'Tangier disease'), 
+                          levels = c('Healthy control', 'Tangier disease'))
+
+rownames(data_meta) <- colnames(data)
+
+p <- pca(data, metadata = data_meta, removeVar = 0.1)
+
+PCA_method_2 <- as.data.frame(p$loadings)
+
+# Display filtered results & export to Excel
+print(PCA_method_2)
+write_xlsx(cbind(Metabolites = rownames(PCA_method_2), PCA_method_2), "PCA_method_2.xlsx")
+```
+
+### Supplementary figure 6B - Biplot
+```{r}
+# Create the biplot
+biplot_plot <-  
+  biplot(p, 
+       showLoadings = TRUE,
+       lab = NULL, 
+       pointSize = 3, 
+       sizeLoadingsNames = 5,
+       ellipse = FALSE,
+       colkey = c('Tangier disease'= '#fdd635', 'Healthy control' = '#a7abed'),
+       colby = 'Group', 
+       legendPosition = 'top', 
+       legendLabSize = 16, 
+       legendIconSize = 8.0
+       )
+biplot_plot
+```
+
+## Supplementary figure 6
+```{r}
+tiff("Supp fig 6.tiff", width = 10, height = 12, units = "in", res = 300, compression = "lzw")
+
+grid.arrange(volcano_plot + ggtitle("A"), 
+             biplot_plot + ggtitle("B"), 
+             ncol = 1)
+
+dev.off()
+```
